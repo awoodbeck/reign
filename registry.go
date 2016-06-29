@@ -63,6 +63,7 @@ just goes away.
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/rand"
 	"sync"
 
@@ -216,6 +217,16 @@ func (r *registry) connectionStatusCallback(node NodeID, connected bool) {
 
 func (r *registry) Stop() {
 	r.Send(stopRegistry{})
+}
+
+func (r *registry) String() string {
+	// Since the registry's Serve() method acquires a lock receiving messages,
+	// we need to make sure that we also acquire that lock before replying to
+	// Suture's service name inquiry.
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	return fmt.Sprintf("registry on node %d", r.thisNode)
 }
 
 func (r *registry) Serve() {

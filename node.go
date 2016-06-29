@@ -91,6 +91,12 @@ type nodeConnection struct {
 }
 
 func (nc *nodeConnector) String() string {
+	// Since the node connector's Serve() method acquires a lock while determining
+	// if it should cancel, we need to make sure that we also acquire that lock before
+	// replying to Suture's service name inquiry.
+	nc.Lock()
+	defer nc.Unlock()
+
 	return fmt.Sprintf("nodeConnector %d -> %d", nc.source.ID, nc.dest.ID)
 }
 

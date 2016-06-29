@@ -68,6 +68,16 @@ func (nl *nodeListener) waitForListen() {
 	nl.Trace("Listener successfully waited for")
 }
 
+func (nl *nodeListener) String() string {
+	// Since the node listener's Serve() method acquires a lock while setting
+	// its listener, we need to make sure that we also acquire that lock before
+	// replying to Suture's service name inquiry.
+	nl.Lock()
+	defer nl.Unlock()
+
+	return fmt.Sprintf("nodeListener %d on %s", nl.node.ID, nl.node.Address)
+}
+
 func (nl *nodeListener) Serve() {
 	// This locks for the duration of a net.ListenTCP call. I *think* we can
 	// assume this is a pretty fast call; either the OS gives it to you or

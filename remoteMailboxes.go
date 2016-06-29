@@ -123,6 +123,10 @@ func (rm *remoteMailboxes) send(cm internal.ClusterMessage, desc string) error {
 	return err
 }
 
+func (rm *remoteMailboxes) String() string {
+	return fmt.Sprintf("remoteMailbox %d", rm.NodeID)
+}
+
 func (rm *remoteMailboxes) Serve() {
 	defer func() {
 		for remoteID, localIDs := range rm.linksToRemote {
