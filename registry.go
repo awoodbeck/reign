@@ -186,6 +186,8 @@ type Names interface {
 	SeenNames(...string) []bool
 	Sync()
 	Unregister(string, *Address)
+	Serve()
+	Stop()
 }
 
 // conceptually, I consider this inline with the newConnections function,

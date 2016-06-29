@@ -12,6 +12,14 @@ func TestConnectionStatusCallback(t *testing.T) {
 	r.connectionStatusCallback(connection.nodeID, false)
 }
 
+func TestNoServe(t *testing.T) {
+	connection, _ := noClustering(NullLogger)
+	addr, mbx := connection.NewMailbox()
+
+	addr.Send(void)
+	mbx.ReceiveNext()
+}
+
 func TestLookup(t *testing.T) {
 	connection, r := noClustering(NullLogger)
 	addr, mbx := connection.NewMailbox()
@@ -36,10 +44,6 @@ func TestConnectionStatus(t *testing.T) {
 	cs := connectionStatus{connection.nodeID, true}
 	r.send(cs)
 
-	synch := make(chan voidtype)
-	r.send(synchronizeRegistry{synch})
-	<-synch
-
 	// First register a mailbox
 	name := "blah"
 	r.Register(name, addr)
@@ -47,15 +51,13 @@ func TestConnectionStatus(t *testing.T) {
 	// This should unregister everything on this node.
 	cs.connected = false
 	r.send(cs)
-	r.send(synchronizeRegistry{synch})
-	<-synch
+	r.Sync()
 
 	// Now make sure the mailbox was unregistered by re-registering with the same info (if unregister
 	// was never called, this would panic)
 	r.Register(name, addr)
-	r.send(synchronizeRegistry{synch})
-	<-synch
-	mbx.send(void)
+	r.Sync()
+	addr.Send(void)
 
 	// mbx should not have received a MultipleClaim
 	v := mbx.ReceiveNext()
@@ -111,12 +113,10 @@ func TestInternalRegisterName(t *testing.T) {
 	r.Register(name, addr2)
 	// 255 is nonexistent node, but we're only looking at the messages sent to mbx1. This
 	// should trigger a MultiplClaim broadcast to mbx2 (invalid) and mbx1 (valid)
-	synch := make(chan voidtype)
-	r.send(synchronizeRegistry{synch})
-	<-synch
+	r.Sync()
 
-	mbx1.send(void)
-	mbx2.send(void)
+	addr1.Send(void)
+	addr2.Send(void)
 
 	// Make sure we received the MultipleClaim
 	mc := mbx1.ReceiveNext()
@@ -144,15 +144,12 @@ func TestInternalUnegisterName(t *testing.T) {
 		t.Fatal("Initial Register should have succeeded")
 	}
 
-	synch := make(chan voidtype)
-	r.send(synchronizeRegistry{synch})
-	<-synch
+	r.Sync()
 
 	// If this Unregsister doesn't work, the second Register will trigger a MultipleClaim broadcast
 	r.Unregister(name, addr)
-	r.send(synchronizeRegistry{synch})
-	<-synch
-	mbx.send(void)
+	r.Sync()
+	addr.Send(void)
 
 	// mbx should not have received a MultipleClaim
 	v := mbx.ReceiveNext()
@@ -162,9 +159,7 @@ func TestInternalUnegisterName(t *testing.T) {
 
 	// Unregistering a fake entry should do nothing
 	r.Unregister(fakeName, addr)
-
-	r.send(synchronizeRegistry{synch})
-	<-synch
+	r.Sync()
 }
 
 func TestInternalAllNodeClaims(t *testing.T) {
@@ -174,7 +169,7 @@ func TestInternalAllNodeClaims(t *testing.T) {
 
 	// Make a bunch of names for the same mailbox and register them with AllNodeClaims
 	names := []string{"foo", "bar", "baz"}
-	_, mbx1 := connection.NewMailbox()
+	addr1, mbx1 := connection.NewMailbox()
 	mid := internal.IntMailboxID(mbx1.id)
 	registrationMap := make(map[string]internal.IntMailboxID)
 	for _, name := range names {
@@ -186,25 +181,22 @@ func TestInternalAllNodeClaims(t *testing.T) {
 	}
 	r.send(anc)
 
-	synch := make(chan voidtype)
-	r.send(synchronizeRegistry{synch})
-	<-synch
+	r.Sync()
 
 	// Now register all of the previous names again, but to a different mailbox.
 	// This should trigger a MultipleClaim broadcast
-	_, mbx2 := connection.NewMailbox()
+	addr2, mbx2 := connection.NewMailbox()
 	for _, name := range names {
-		r.register(connection.nodeID, name, mbx2.id)
+		r.Register(name, addr2)
 	}
-	r.send(synchronizeRegistry{synch})
-	<-synch
+	r.Sync()
 
 	// Make sure we don't block
 	for _ = range names {
-		mbx1.send(void)
+		addr1.Send(void)
 	}
 	for _ = range names {
-		mbx2.send(void)
+		addr2.Send(void)
 	}
 
 	// Verify that we got MultipleClaims on both mailboxen
