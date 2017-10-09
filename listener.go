@@ -155,7 +155,6 @@ type incomingConnection struct {
 	conn           net.Conn // The connection we are actually using to send data
 	tcpConn        net.Conn // The raw TCP connection, no matter what we're doing
 	tls            net.Conn // The TLS connection, if any
-	pingTimer      *time.Timer
 	resetPingTimer chan time.Duration
 }
 
@@ -175,30 +174,35 @@ func (ic *incomingConnection) send(value *internal.ClusterMessage) error {
 
 	// FIXME Send timeout
 	err := ic.output.Encode(value)
+
 	return err
 }
 
 func (ic *incomingConnection) terminate() {
 	tls := ic.tls
 	if tls != nil {
-		tls.Close()
+		_ = tls.Close()
 	}
+
 	tcpConn := ic.tcpConn
 	if tcpConn != nil {
-		tcpConn.Close()
+		_ = tcpConn.Close()
 	}
-	return
 }
 
 func myString(i interface{}) string {
+	var o string
+
 	switch s := i.(type) {
 	case error:
-		return s.Error()
+		o = s.Error()
 	case fmt.Stringer:
-		return s.String()
+		o = s.String()
 	default:
-		return fmt.Sprintf("%#v", i)
+		o = fmt.Sprintf("%#v", i)
 	}
+
+	return o
 }
 
 func (ic *incomingConnection) handleConnection() {
@@ -208,10 +212,10 @@ func (ic *incomingConnection) handleConnection() {
 			l := runtime.Stack(buf, false)
 			ic.Errorf("Listener handler crashed: %s\n%s", myString(r), string(buf[:l]))
 			if ic.tls != nil {
-				ic.tls.Close()
+				_ = ic.tls.Close()
 			}
 			if ic.tcpConn != nil {
-				ic.tcpConn.Close()
+				_ = ic.tcpConn.Close()
 			}
 		}
 	}()
@@ -227,6 +231,7 @@ func (ic *incomingConnection) handleConnection() {
 	err = ic.clusterHandshake()
 	if err != nil {
 		ic.Errorf("Could not cluster handshake the incoming connection: " + err.Error())
+
 		return
 	}
 	ic.Infof("Node %d listener successfully cluster handshook", ic.server.ID)
@@ -239,6 +244,7 @@ func (ic *incomingConnection) handleConnection() {
 	err = ic.registrySync()
 	if err != nil {
 		ic.Errorf("Could not sync registry with node %d: %s", ic.client.ID, err.Error())
+
 		return
 	}
 	ic.Infof("Node %d listener successfully synced registry", ic.server.ID)
@@ -247,21 +253,21 @@ func (ic *incomingConnection) handleConnection() {
 }
 
 // FIXME: This ought to be refactored with the node
-func (ic *incomingConnection) sslHandshake() (err error) {
+func (ic *incomingConnection) sslHandshake() error {
 	ic.Tracef("Node %d listener in sslHandshake", ic.server.ID)
 	// FIXME: Demeter is yelling at me here.
 	if ic.nodeListener.failOnSSLHandshake {
-		err = errors.New("ssl handshake simulating failure")
 		ic.terminate()
-		return
+
+		return errors.New("ssl handshake simulating failure")
 	}
 	tlsConfig := ic.nodeListener.connectionServer.Cluster.tlsConfig(ic.server.ID)
 	tls := tls.Server(ic.conn, tlsConfig)
 	ic.Tracef("Node %d listener made the tlsConn, handshaking", ic.server.ID)
 
-	err = tls.Handshake()
+	err := tls.Handshake()
 	if err != nil {
-		return
+		return err
 	}
 
 	ic.tls = tls
@@ -272,17 +278,17 @@ func (ic *incomingConnection) sslHandshake() (err error) {
 	return nil
 }
 
-func (ic *incomingConnection) clusterHandshake() (err error) {
+func (ic *incomingConnection) clusterHandshake() error {
 	if ic.nodeListener.failOnClusterHandshake {
 		ic.terminate()
-		err = errors.New("cluster handshake simulating failure")
-		return
+
+		return errors.New("cluster handshake simulating failure")
 	}
 
 	var clientHandshake internal.ClusterHandshake
-	err = ic.input.Decode(&clientHandshake)
+	err := ic.input.Decode(&clientHandshake)
 	if err != nil {
-		return
+		return err
 	}
 
 	myNodeID := NodeID(clientHandshake.MyNodeID)
@@ -309,51 +315,51 @@ func (ic *incomingConnection) clusterHandshake() (err error) {
 		YourNodeID:     clientHandshake.MyNodeID,
 	}
 
-	ic.output.Encode(myHandshake)
+	err = ic.output.Encode(myHandshake)
+	if err != nil {
+		return err
+	}
 
 	ic.input = gob.NewDecoder(ic.tls)
 
-	return
+	return nil
 }
 
 // registrySync sends this node's registry MailboxID and claims to the remote node.
-func (ic *incomingConnection) registrySync() (err error) {
+func (ic *incomingConnection) registrySync() error {
 	// Send our registry synchronization data to the remote node.
 	rs := internal.RegistrySync{
 		Node:      internal.IntNodeID(ic.node.ID),
 		MailboxID: internal.IntMailboxID(ic.connectionServer.registry.Address.GetID()),
 		Claims:    ic.connectionServer.registry.generateAllNodeClaims(),
 	}
-	err = ic.output.Encode(rs)
+	err := ic.output.Encode(rs)
 	if err != nil {
-		return
+		return err
 	}
 
 	// Receive the remote node's registry synchronization data.
 	var irs internal.RegistrySync
 	err = ic.input.Decode(&irs)
 	if err != nil {
-		return
+		return err
 	}
 
 	ic.Tracef("Received mailbox ID %x from node %d", irs.MailboxID, irs.Node)
 
 	// Add remote node's registry mailbox ID to the nodeRegistries map.
-	ic.connectionServer.registry.mu.Lock()
-	if ic.connectionServer.registry.nodeRegistries == nil {
-		ic.connectionServer.registry.nodeRegistries = make(map[NodeID]Address)
-	}
-
-	ic.connectionServer.registry.nodeRegistries[NodeID(irs.Node)] = Address{
-		mailboxID:        MailboxID(irs.MailboxID),
-		connectionServer: ic.connectionServer,
-	}
-	ic.connectionServer.registry.mu.Unlock()
+	ic.connectionServer.registry.addNodeRegistry(
+		NodeID(irs.Node),
+		Address{
+			mailboxID:        MailboxID(irs.MailboxID),
+			connectionServer: ic.connectionServer,
+		},
+	)
 
 	// Process the remote node's registry claims.
 	ic.connectionServer.registry.handleAllNodeClaims(irs.Claims)
 
-	return
+	return nil
 }
 
 // handleIncomingMessages handles messages from the remote nodes after
@@ -415,7 +421,7 @@ func (nl *nodeListener) Stop() {
 
 	if nl.listener != nil {
 		nl.stopped = true
-		nl.listener.Close()
+		_ = nl.listener.Close()
 	} else {
 		nl.stopped = true
 	}

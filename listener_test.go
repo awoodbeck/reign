@@ -85,7 +85,7 @@ func TestNodeListenerErrors(t *testing.T) {
 	}()
 	nl.waitForListen()
 	_ = nl.String() // should not block
-	nl.listener.Close()
+	_ = nl.listener.Close()
 	<-terminated
 }
 
@@ -183,7 +183,7 @@ func BenchmarkRegisterUnregisterMailbox(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		a, m := ntb.node1connectionServer.NewMailbox()
-		ntb.node1connectionServer.registry.Register("test", a)
+		_ = ntb.node1connectionServer.registry.Register("test", a)
 		ntb.node1connectionServer.registry.Sync()
 
 		m.Terminate()

@@ -29,7 +29,7 @@ func pingRemote(output *gob.Encoder, resetTimer <-chan time.Duration, log Cluste
 	// use the default.
 	select {
 	case i := <-resetTimer:
-		if i.Nanoseconds() > 0 {
+		if i > 0 {
 			interval = i
 		}
 	default:
@@ -44,7 +44,7 @@ func pingRemote(output *gob.Encoder, resetTimer <-chan time.Duration, log Cluste
 				return
 			}
 
-			if i.Nanoseconds() > 0 {
+			if i > 0 {
 				interval = i
 			}
 

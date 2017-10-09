@@ -48,6 +48,10 @@ const (
 	clusterVersion = 1
 )
 
+// ErrFailOnClusterHandshake is the error returned when a node connector's
+// failOnClusterHandshake property is true.
+var ErrFailOnClusterHandshake = errors.New("Failing on ssl handshake, as instructed")
+
 // nodeConnector bundles together all of the information about how to connect
 // to a node. The actual connection is a nodeConnection. This runs as a
 // supervised service.
@@ -229,30 +233,29 @@ func (nc *nodeConnection) terminate() {
 		return
 	}
 
-	tls := nc.tls
-	if tls != nil {
-		tls.Close()
+	if tls := nc.tls; tls != nil {
+		_ = tls.Close()
 	}
-	conn := nc.conn
-	if conn != nil {
-		conn.Close()
+
+	if conn := nc.conn; conn != nil {
+		_ = conn.Close()
 	}
-	rawOutput := nc.rawOutput
-	if rawOutput != nil {
-		rawOutput.Close()
+
+	if rawOutput := nc.rawOutput; rawOutput != nil {
+		_ = rawOutput.Close()
 	}
-	rawInput := nc.rawInput
-	if rawInput != nil {
-		rawInput.Close()
+
+	if rawInput := nc.rawInput; rawInput != nil {
+		_ = rawInput.Close()
 	}
 }
 
-func (nc *nodeConnection) sslHandshake() (err error) {
+func (nc *nodeConnection) sslHandshake() error {
 	nc.Tracef("Conn to %d in sslHandshake", nc.dest.ID)
 	if nc.failOnSSLHandshake {
-		nc.conn.Close()
-		err = errors.New("Failing on ssl handshake, as instructed")
-		return
+		_ = nc.conn.Close()
+
+		return ErrFailOnClusterHandshake
 	}
 	tlsConfig := nc.connectionServer.Cluster.tlsConfig(nc.dest.ID)
 	tlsConn := tls.Client(nc.conn, tlsConfig)
@@ -261,9 +264,9 @@ func (nc *nodeConnection) sslHandshake() (err error) {
 	// automatically at first communication,, so I get any errors it may
 	// produce at a controlled time.
 	nc.Tracef("Conn to %d handshaking", nc.dest.ID)
-	err = tlsConn.Handshake()
+	err := tlsConn.Handshake()
 	if err != nil {
-		return
+		return err
 	}
 
 	nc.tls = tlsConn
@@ -271,26 +274,31 @@ func (nc *nodeConnection) sslHandshake() (err error) {
 	// Initially, we unconditionally use the TLS connection
 	nc.output = gob.NewEncoder(nc.tls)
 	nc.input = gob.NewDecoder(nc.tls)
-	return
+
+	return nil
 }
 
-func (nc *nodeConnection) clusterHandshake() (err error) {
+func (nc *nodeConnection) clusterHandshake() error {
+
 	if nc.failOnClusterHandshake {
-		nc.tls.Close()
-		err = errors.New("Failing on cluster handshake, as instructed")
-		return
+		_ = nc.tls.Close()
+
+		return ErrFailOnClusterHandshake
 	}
 	handshake := internal.ClusterHandshake{
 		ClusterVersion: clusterVersion,
 		MyNodeID:       internal.IntNodeID(nc.source.ID),
 		YourNodeID:     internal.IntNodeID(nc.dest.ID),
 	}
-	nc.output.Encode(handshake)
+	err := nc.output.Encode(handshake)
+	if err != nil {
+		return err
+	}
 
 	var serverHandshake internal.ClusterHandshake
 	err = nc.input.Decode(&serverHandshake)
 	if err != nil {
-		return
+		return err
 	}
 
 	myNodeID := NodeID(serverHandshake.MyNodeID)
@@ -311,47 +319,44 @@ func (nc *nodeConnection) clusterHandshake() (err error) {
 
 	nc.input = gob.NewDecoder(nc.tls)
 
-	return
+	return nil
 }
 
 // registrySync sends this node's registry MailboxID and claims to the remote node.
-func (nc *nodeConnection) registrySync() (err error) {
+func (nc *nodeConnection) registrySync() error {
 	// Send our registry synchronization data to the remote node.
 	rs := internal.RegistrySync{
 		Node:      internal.IntNodeID(nc.source.ID),
 		MailboxID: internal.IntMailboxID(nc.connectionServer.registry.Address.GetID()),
 		Claims:    nc.connectionServer.registry.generateAllNodeClaims(),
 	}
-	err = nc.output.Encode(rs)
+	err := nc.output.Encode(rs)
 	if err != nil {
-		return
+		return err
 	}
 
 	// Receive the remote node's registry synchronization data.
 	var irs internal.RegistrySync
 	err = nc.input.Decode(&irs)
 	if err != nil {
-		return
+		return err
 	}
 
 	nc.Tracef("Received mailbox ID %x from node %d", irs.MailboxID, irs.Node)
 
 	// Add remote node's registry mailbox ID to the nodeRegistries map.
-	nc.connectionServer.registry.mu.Lock()
-	if nc.connectionServer.registry.nodeRegistries == nil {
-		nc.connectionServer.registry.nodeRegistries = make(map[NodeID]Address)
-	}
-
-	nc.connectionServer.registry.nodeRegistries[NodeID(irs.Node)] = Address{
-		mailboxID:        MailboxID(irs.MailboxID),
-		connectionServer: nc.connectionServer,
-	}
-	nc.connectionServer.registry.mu.Unlock()
+	nc.connectionServer.registry.addNodeRegistry(
+		NodeID(irs.Node),
+		Address{
+			mailboxID:        MailboxID(irs.MailboxID),
+			connectionServer: nc.connectionServer,
+		},
+	)
 
 	// Process the remote node's registry claims.
 	nc.connectionServer.registry.handleAllNodeClaims(irs.Claims)
 
-	return
+	return nil
 }
 
 // handleIncomingMessages handle replies from the remote node after this

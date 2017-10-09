@@ -56,35 +56,35 @@ type wrapLogger struct {
 }
 
 func (sl wrapLogger) Error(args ...interface{}) {
-	sl.logger.Output(2, "[ERROR] reign: "+fmt.Sprint(args...)+"\n")
+	_ = sl.logger.Output(2, "[ERROR] reign: "+fmt.Sprint(args...)+"\n")
 }
 
 func (sl wrapLogger) Errorf(format string, args ...interface{}) {
-	sl.logger.Output(2, fmt.Sprintf("[ERROR] reign: "+format+"\n", args...))
+	_ = sl.logger.Output(2, fmt.Sprintf("[ERROR] reign: "+format+"\n", args...))
 }
 
 func (sl wrapLogger) Warn(args ...interface{}) {
-	sl.logger.Output(2, "[WARN] reign: "+fmt.Sprint(args...)+"\n")
+	_ = sl.logger.Output(2, "[WARN] reign: "+fmt.Sprint(args...)+"\n")
 }
 
 func (sl wrapLogger) Warnf(format string, args ...interface{}) {
-	sl.logger.Output(2, fmt.Sprintf("[WARN] reign: "+format+"\n", args...))
+	_ = sl.logger.Output(2, fmt.Sprintf("[WARN] reign: "+format+"\n", args...))
 }
 
 func (sl wrapLogger) Info(args ...interface{}) {
-	sl.logger.Output(2, "[INFO] reign: "+fmt.Sprint(args...)+"\n")
+	_ = sl.logger.Output(2, "[INFO] reign: "+fmt.Sprint(args...)+"\n")
 }
 
 func (sl wrapLogger) Infof(format string, args ...interface{}) {
-	sl.logger.Output(2, fmt.Sprintf("[INFO] reign: "+format+"\n", args...))
+	_ = sl.logger.Output(2, fmt.Sprintf("[INFO] reign: "+format+"\n", args...))
 }
 
 func (sl wrapLogger) Trace(args ...interface{}) {
-	sl.logger.Output(2, "[TRACE] reign: "+fmt.Sprint(args...)+"\n")
+	_ = sl.logger.Output(2, "[TRACE] reign: "+fmt.Sprint(args...)+"\n")
 }
 
 func (sl wrapLogger) Tracef(format string, args ...interface{}) {
-	sl.logger.Output(2, fmt.Sprintf("[TRACE] reign: "+format+"\n", args...))
+	_ = sl.logger.Output(2, fmt.Sprintf("[TRACE] reign: "+format+"\n", args...))
 }
 
 // StdLogger is a ClusterLogger that will use the log.Output function

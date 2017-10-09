@@ -109,7 +109,7 @@ func (rm *remoteMailboxes) unsetConnection(ms messageSender) {
 type terminateRemoteMailbox struct{}
 
 func (rm *remoteMailboxes) Stop() {
-	rm.Send(terminateRemoteMailbox{})
+	_ = rm.Send(terminateRemoteMailbox{})
 }
 
 var errNoConnection = errors.New("no connection")
@@ -146,7 +146,7 @@ func (rm *remoteMailboxes) Serve() {
 					mailboxID:        localID,
 					connectionServer: rm.connectionServer,
 				}
-				addr.Send(MailboxTerminated(remoteID))
+				_ = addr.Send(MailboxTerminated(remoteID))
 			}
 		}
 		rm.linksToRemote = make(map[MailboxID]map[MailboxID]voidtype)
@@ -180,11 +180,8 @@ func (rm *remoteMailboxes) Serve() {
 
 		switch msg := message.(type) {
 		case internal.OutgoingMailboxMessage:
-			rm.send(
-				internal.IncomingMailboxMessage{
-					Target:  msg.Target,
-					Message: msg.Message,
-				},
+			_ = rm.send(
+				internal.IncomingMailboxMessage(msg),
 				"normal message",
 			)
 
@@ -196,7 +193,7 @@ func (rm *remoteMailboxes) Serve() {
 				mailboxID:        MailboxID(msg.Target),
 				connectionServer: rm.connectionServer,
 			}
-			addr.Send(msg.Message)
+			_ = addr.Send(msg.Message)
 
 		case internal.NotifyRemote:
 			// FIXME: if the local addr dies, this never cleans out
@@ -231,7 +228,7 @@ func (rm *remoteMailboxes) Serve() {
 						mailboxID:        localID,
 						connectionServer: rm.connectionServer,
 					}
-					addr.Send(MailboxTerminated(remoteID))
+					_ = addr.Send(MailboxTerminated(remoteID))
 					// FIXME: Really? Panic?
 					panic(err)
 				}
@@ -254,7 +251,7 @@ func (rm *remoteMailboxes) Serve() {
 				// if that was the last link, we need to unregister from
 				// the remote node
 				// send does all the error handling I need here
-				rm.send(
+				_ = rm.send(
 					&internal.RemoveNotifyNodeOnTerminate{IntMailboxID: internal.IntMailboxID(remoteID)},
 					"remove notify node",
 				)
@@ -274,7 +271,7 @@ func (rm *remoteMailboxes) Serve() {
 					mailboxID:        subscribed,
 					connectionServer: rm.connectionServer,
 				}
-				addr.Send(MailboxTerminated(remoteID))
+				_ = addr.Send(MailboxTerminated(remoteID))
 			}
 
 			delete(rm.linksToRemote, remoteID)

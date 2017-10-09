@@ -246,16 +246,20 @@ func (r *registry) addNodeRegistry(n NodeID, a Address) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if r.nodeRegistries == nil {
+		r.nodeRegistries = make(map[NodeID]Address)
+	}
+
 	r.nodeRegistries[n] = a
 	r.Tracef("Added address %q on node %d to the node registry", a.String(), n)
 }
 
 func (r *registry) connectionStatusCallback(node NodeID, connected bool) {
-	r.Send(connectionStatus{node, connected})
+	_ = r.Send(connectionStatus{node, connected})
 }
 
 func (r *registry) Stop() {
-	r.Send(stopRegistry{})
+	_ = r.Send(stopRegistry{})
 }
 
 func (r *registry) String() string {
@@ -324,7 +328,7 @@ func (r *registry) Serve() {
 
 func (r *registry) Sync() {
 	synch := make(chan voidtype)
-	r.send(synchronizeRegistry{synch})
+	_ = r.send(synchronizeRegistry{synch})
 	<-synch
 }
 
@@ -421,7 +425,7 @@ func (r *registry) handleConnectionStatus(msg connectionStatus) {
 
 func (r *registry) toOtherNodes(msg interface{}) {
 	for _, addr := range r.nodeRegistries {
-		addr.Send(msg)
+		_ = addr.Send(msg)
 	}
 }
 
@@ -446,7 +450,7 @@ func (r *registry) Lookup(s string) (a *Address) {
 		a = addresses[rand.Intn(l)]
 	}
 
-	return
+	return a
 }
 
 // LookupAll returns a slice of Addresses that can be used to send messages
@@ -470,7 +474,7 @@ func (r *registry) LookupAll(s string) (a []*Address) {
 		})
 	}
 
-	return
+	return a
 }
 
 func (r *registry) MultipleClaimCount() int {
@@ -515,10 +519,10 @@ func (r *registry) Unregister(name string, addr *Address) {
 		return
 	}
 
-	r.Tracef("Unregistrering %q with address %x on this node", name, addr.mailboxID)
+	r.Tracef("Unregistering %q with address %x on this node", name, addr.mailboxID)
 
 	// at the moment, only mailboxID can pass the check above
-	r.Send(internal.UnregisterName{
+	_ = r.Send(internal.UnregisterName{
 		Node:      internal.IntNodeID(r.thisNode),
 		Name:      name,
 		MailboxID: internal.IntMailboxID(addr.mailboxID),
@@ -531,7 +535,7 @@ func (r *registry) Unregister(name string, addr *Address) {
 func (r *registry) UnregisterMailbox(node NodeID, mID MailboxID) {
 	if mID.NodeID() == node && node == r.thisNode && r.mailboxID != mID {
 		r.Tracef("Unregistering mailbox %x on this node", mID)
-		r.Send(internal.UnregisterMailbox{
+		_ = r.Send(internal.UnregisterMailbox{
 			Node:      internal.IntNodeID(node),
 			MailboxID: internal.IntMailboxID(mID),
 		})
@@ -683,15 +687,17 @@ func (r *registry) DumpJSON() string {
 	return string(j)
 }
 
-func (r *registry) AddressCount() (count uint) {
+func (r *registry) AddressCount() uint {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
+	var count uint
 
 	for _, addresses := range r.claims {
 		count += uint(len(addresses))
 	}
 
-	return
+	return count
 }
 
 func (r *registry) AllNames() []string {

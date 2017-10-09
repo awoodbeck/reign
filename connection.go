@@ -134,7 +134,9 @@ func (cs *connectionServer) Terminate() {
 	setConnections(nil)
 }
 
-func (cs *connectionServer) send(mID MailboxID, msg interface{}) (err error) {
+func (cs *connectionServer) send(mID MailboxID, msg interface{}) error {
+	var err error
+
 	if mID.NodeID() == cs.ThisNode.ID {
 		err = cs.mailboxes.sendByID(mID, msg)
 	} else {
@@ -146,7 +148,8 @@ func (cs *connectionServer) send(mID MailboxID, msg interface{}) (err error) {
 			"remote mailbox message",
 		)
 	}
-	return
+
+	return err
 }
 
 func newConnections(cluster *Cluster, myNodeID NodeID) *connectionServer {
