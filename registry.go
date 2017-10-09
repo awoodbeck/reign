@@ -66,6 +66,8 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/thejerf/reign/internal"
 )
@@ -73,6 +75,8 @@ import (
 func init() {
 	var mc MultipleClaim
 	RegisterType(&mc)
+
+	rand.Seed(time.Now().UnixNano())
 }
 
 // ErrNoAddressRegistered is returned when there are no addresses at
@@ -152,7 +156,7 @@ type Names interface {
 	Lookup(string) *Address
 	LookupAll(string) []*Address
 	MessageCount() int
-	MultipleClaimCount() int
+	MultipleClaimCount() int32
 	Register(string, *Address) error
 	SeenNames(...string) []bool
 	Sync()
@@ -167,10 +171,15 @@ var _ Names = (*registry)(nil)
 type registry struct {
 	ClusterLogger
 
-	mu sync.RWMutex
+	*Address
+	*Mailbox
+
+	thisNode NodeID
 
 	// multipleClaimCount gauges the number of multiple claims.
-	multipleClaimCount int
+	multipleClaimCount int32
+
+	mu sync.RWMutex
 
 	// the set of all claims understood by the local node, organized as
 	// name -> set of mailbox IDs.
@@ -181,15 +190,15 @@ type registry struct {
 	// mailbox ID from each registered name.
 	mailboxIDs map[MailboxID]registryEntries
 
+	// The node registries map gets its own mutex since the map isn't involved
+	// in other registry functions.  It's only concerned with notification to
+	// other nodes in the cluster.
+	regMu sync.RWMutex
+
 	// The map of nodes -> addresses used to communicate with those nodes.
 	// When a registration is made, this is the list of nodes that will
 	// receive notifications of the new address. This only has remote nodes.
 	nodeRegistries map[NodeID]Address
-
-	*Address
-	*Mailbox
-
-	thisNode NodeID
 }
 
 type connectionStatus struct {
@@ -205,7 +214,7 @@ type NamesDebugger interface {
 	DumpClaims() map[string][]MailboxID
 	DumpJSON() string
 	MessageCount() int
-	MultipleClaimCount() int
+	MultipleClaimCount() int32
 	SeenNames(...string) []bool
 }
 
@@ -243,8 +252,8 @@ func (r *registry) Terminate() {
 // is not added to this map, this node will be unable to send registry-related
 // messages to the remote node (e.g., register name, unregister name, etc.).
 func (r *registry) addNodeRegistry(n NodeID, a Address) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.regMu.Lock()
+	defer r.regMu.Unlock()
 
 	if r.nodeRegistries == nil {
 		r.nodeRegistries = make(map[NodeID]Address)
@@ -401,9 +410,10 @@ func (r *registry) handleConnectionStatus(msg connectionStatus) {
 		return
 	}
 
+	// Unregister all of the remote node registry entries.
 	entries := registryEntries{}
 
-	r.mu.Lock()
+	r.mu.RLock()
 	for name, mailboxIDs := range r.claims {
 		for mailboxID := range mailboxIDs {
 			if mailboxID.NodeID() == msg.node {
@@ -414,9 +424,11 @@ func (r *registry) handleConnectionStatus(msg connectionStatus) {
 			}
 		}
 	}
+	r.mu.RUnlock()
 
+	r.regMu.Lock()
 	delete(r.nodeRegistries, msg.node)
-	r.mu.Unlock()
+	r.regMu.Unlock()
 
 	if len(entries) > 0 {
 		r.unregisterAll(entries)
@@ -424,7 +436,11 @@ func (r *registry) handleConnectionStatus(msg connectionStatus) {
 }
 
 func (r *registry) toOtherNodes(msg interface{}) {
-	for _, addr := range r.nodeRegistries {
+	r.regMu.RLock()
+	defer r.regMu.RUnlock()
+
+	for n, addr := range r.nodeRegistries {
+		r.Tracef("Sending message to node %d: %#v", n, msg)
 		_ = addr.Send(msg)
 	}
 }
@@ -455,33 +471,37 @@ func (r *registry) Lookup(s string) (a *Address) {
 
 // LookupAll returns a slice of Addresses that can be used to send messages
 // to the mailboxes registered with the given string.
-func (r *registry) LookupAll(s string) (a []*Address) {
+func (r *registry) LookupAll(s string) []*Address {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	var a []*Address
+
 	claims, ok := r.claims[s]
 	if !ok {
-		return
+		return a
 	}
 
-	cs := r.connectionServer
+	if len(claims) > 0 {
+		cs := r.connectionServer
 
-	for k := range claims {
-		a = append(a, &Address{
-			mailboxID:        k,
-			connectionServer: cs,
-			mailbox:          nil,
-		})
+		for k := range claims {
+			a = append(a, &Address{
+				mailboxID:        k,
+				connectionServer: cs,
+				mailbox:          nil,
+			})
+		}
 	}
 
 	return a
 }
 
-func (r *registry) MultipleClaimCount() int {
+func (r *registry) MultipleClaimCount() int32 {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	return r.multipleClaimCount
+	return atomic.LoadInt32(&r.multipleClaimCount)
 }
 
 // Register claims the given global name in the registry.
@@ -603,7 +623,7 @@ func (r *registry) registerAll(entries registryEntries) {
 
 		if preCount <= 1 && postCount > 1 {
 			// Multiple claim for the current name.
-			r.multipleClaimCount++
+			atomic.AddInt32(&r.multipleClaimCount, 1)
 		}
 	}
 }
@@ -640,7 +660,7 @@ func (r *registry) unregisterAll(entries registryEntries) {
 
 		if preCount > 1 && postCount <= 1 {
 			// No longer have a multiple claim for the current name.
-			r.multipleClaimCount--
+			atomic.AddInt32(&r.multipleClaimCount, -1)
 		}
 
 		if postCount == 0 {
