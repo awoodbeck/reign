@@ -151,46 +151,6 @@ func TestNoRegistryServe(t *testing.T) {
 	}
 }
 
-func TestUnregisterOnTerminate(t *testing.T) {
-	cs, r := noClustering(NullLogger)
-	defer cs.Terminate()
-
-	go func() { r.Serve() }()
-	defer r.Stop()
-
-	addr, mbx := cs.NewMailbox()
-
-	names := []string{"blah", "blech", "blorg"}
-
-	for _, name := range names {
-		if err := r.Register(name, addr); err != nil {
-			t.Fatal(err)
-		}
-	}
-	r.Sync()
-
-	// Make sure Lookup works
-	for _, name := range names {
-		addr := r.Lookup(name)
-		if addr == nil {
-			t.Fatalf("Lookup failed on registered name '%s'", name)
-		}
-	}
-
-	// Terminate() should call r.UnregisterMailbox and unregistered all the names that
-	// belong to mbx
-	mbx.Terminate()
-	r.Sync()
-
-	// Now make sure that all the names have been unregistered
-	for _, name := range names {
-		addr := r.Lookup(name)
-		if addr != nil {
-			t.Fatalf("Terminate() did not unregister name '%s'", name)
-		}
-	}
-}
-
 func TestInternalRegisterName(t *testing.T) {
 	cs, r := noClustering(NullLogger)
 	defer cs.Terminate()
