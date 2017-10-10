@@ -2,13 +2,21 @@ package reign
 
 import (
 	"encoding/gob"
+	"net"
 	"time"
 
 	"github.com/thejerf/reign/internal"
 )
 
-// DefaultPingInterval determines the minimum interval between PING messages.
-var DefaultPingInterval = time.Second * 30
+var (
+	// DefaultPingInterval determines the minimum interval between PING messages.
+	DefaultPingInterval = time.Second * 30
+
+	// MaxSequentialPingFailures is the maximum number of sequential ping failures
+	// tolerable before the pinger panics, triggering a service restart if running
+	// under suture.
+	MaxSequentialPingFailures uint8 = 5
+)
 
 // pingRemote sends a "ping" message to the output encoder on an interval read off the
 // resetTimer channel.  This interval is used until one greater than 0 is put on the
@@ -21,8 +29,9 @@ var DefaultPingInterval = time.Second * 30
 // resetTimer channel is closed.
 func pingRemote(output *gob.Encoder, resetTimer <-chan time.Duration, log ClusterLogger) {
 	var (
-		interval                         = DefaultPingInterval
-		ping     internal.ClusterMessage = internal.Ping{}
+		failureCount uint8
+		interval                             = DefaultPingInterval
+		ping         internal.ClusterMessage = internal.Ping{}
 	)
 
 	// Set the interval if there's already one on the channel.  Otherwise,
@@ -56,7 +65,16 @@ func pingRemote(output *gob.Encoder, resetTimer <-chan time.Duration, log Cluste
 		case <-t.C:
 			err := output.Encode(&ping)
 			if err != nil {
+				failureCount++
+
+				netErr, ok := err.(net.Error)
+				if !ok || !netErr.Temporary() || failureCount >= MaxSequentialPingFailures {
+					panic(err)
+				}
+
 				log.Error(err)
+			} else {
+				failureCount = 0
 			}
 			_ = t.Reset(interval)
 		}

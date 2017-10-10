@@ -407,10 +407,20 @@ func (ic *incomingConnection) handleIncomingMessages() {
 				}
 			}
 			ic.resetConnectionDeadline(DeadlineInterval)
+
+			continue
 		case io.EOF:
 			ic.Errorf("Connection to node ID %v has gone down", ic.client.ID)
 		default:
-			panic(fmt.Sprintf("Error decoding message: %s", err))
+			nErr, ok := err.(net.Error)
+			if ok && nErr.Temporary() {
+				// The pinger is monitoring temporary errors and will panic if
+				// its threshold is exceeded.
+				ic.Warn(err)
+				err = nil
+			} else {
+				ic.Errorf("Error decoding message: %s", err)
+			}
 		}
 	}
 }

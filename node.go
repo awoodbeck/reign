@@ -410,7 +410,15 @@ func (nc *nodeConnection) handleIncomingMessages() {
 		case io.EOF:
 			nc.Errorf("Connection to node ID %v has gone down", nc.dest.ID)
 		default:
-			panic(fmt.Sprintf("Error decoding message: %s", err.Error()))
+			nErr, ok := err.(net.Error)
+			if ok && nErr.Temporary() {
+				// The pinger is monitoring temporary errors and will panic if
+				// its threshold is exceeded.
+				nc.Warn(err)
+				err = nil
+			} else {
+				nc.Errorf("Error decoding message: %s", err)
+			}
 		}
 	}
 }
