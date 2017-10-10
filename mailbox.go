@@ -755,9 +755,6 @@ func (m *Mailbox) Terminate() {
 	// out of this dict is OK.
 	m.parent.unregisterMailbox(m.id)
 
-	// Unregister myself all the names that point to me
-	m.parent.connectionServer.registry.UnregisterMailbox(m.id.NodeID(), m.id)
-
 	m.cond.L.Lock()
 	defer m.cond.L.Unlock()
 
