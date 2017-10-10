@@ -305,8 +305,7 @@ func (r *registry) Serve() {
 		case *internal.UnregisterName:
 			r.unregister(msg.Name, MailboxID(msg.MailboxID))
 
-			// This should only be called internally
-		case internal.UnregisterMailbox:
+		case internal.UnregisterMailbox: // This should only be called internally
 			r.unregisterMailbox(MailboxID(msg.MailboxID))
 
 		case connectionStatus:
@@ -374,25 +373,26 @@ func (r *registry) generateAllNodeClaims() internal.AllNodeClaims {
 }
 
 func (r *registry) handleAllNodeClaims(msg internal.AllNodeClaims) {
-	entries := make(registryEntries, 0, len(msg.Claims))
-
 	for name, mailboxIDs := range msg.Claims {
 		for intMailboxID := range mailboxIDs {
 			// Sanity check.
 			if intMailboxID.NodeID() != msg.Node {
 				r.Warnf("Omitting mailbox ID %x from registry sync because it's not local to node %d", intMailboxID, msg.Node)
+
 				continue
 			}
 
-			entries = append(entries, registryEntry{
-				name:      name,
-				mailboxID: MailboxID(intMailboxID),
+			// These entries must be sent to the registry's mailbox. The
+			// registry's mailbox is a timeline of registrations and
+			// unregistrations.  Calling register() here would cause
+			// synchronization issues with the unprocessed messages in
+			// the registry's mailbox.
+			_ = r.Send(internal.RegisterName{
+				Node:      internal.IntNodeID(r.thisNode),
+				Name:      name,
+				MailboxID: intMailboxID,
 			})
 		}
-	}
-
-	if len(entries) > 0 {
-		r.registerAll(entries)
 	}
 }
 
