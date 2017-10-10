@@ -679,7 +679,17 @@ func (r *registry) unregisterMailbox(mID MailboxID) {
 	r.mu.Unlock()
 
 	if len(entries) > 0 {
+		// Remove the entries from this node.
 		r.unregisterAll(entries)
+
+		// Broadcast out the unregistrations to the other nodes.
+		for _, entry := range entries {
+			r.toOtherNodes(internal.UnregisterName{
+				Node:      internal.IntNodeID(r.thisNode),
+				Name:      entry.name,
+				MailboxID: internal.IntMailboxID(entry.mailboxID),
+			})
+		}
 	}
 }
 

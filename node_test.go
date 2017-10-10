@@ -395,5 +395,5 @@ func TestHeartbeatRoundtrip(t *testing.T) {
 func TestCoverRemoteMailboxes(t *testing.T) {
 	rm := new(remoteMailboxes)
 	rm.ClusterLogger = NullLogger
-	_ = rm.send(internal.PanicHandler{}, "")
+	_ = rm.send(internal.PanicHandler{})
 }

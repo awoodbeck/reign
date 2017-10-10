@@ -3,10 +3,14 @@ package reign
 import (
 	"errors"
 	"fmt"
+	"net"
 	"sync"
+	"time"
 
 	"github.com/thejerf/reign/internal"
 )
+
+var errNoConnection = errors.New("no connection")
 
 type messageSender interface {
 	send(*internal.ClusterMessage) error
@@ -112,24 +116,36 @@ func (rm *remoteMailboxes) Stop() {
 	_ = rm.Send(terminateRemoteMailbox{})
 }
 
-var errNoConnection = errors.New("no connection")
-
-func (rm *remoteMailboxes) send(cm internal.ClusterMessage, desc string) error {
+func (rm *remoteMailboxes) send(cm internal.ClusterMessage) error {
 	rm.Lock()
 	defer rm.Unlock()
 
 	if rm.connection == nil {
 		if rm.ClusterLogger != nil {
-			rm.Errorf("Could send message \"%s\" because there's no connection", desc)
+			rm.Errorf("No connection sending: %#v", cm)
 		}
+
 		return errNoConnection
 	}
 
 	err := rm.connection.send(&cm)
 	if err != nil {
-		rm.Errorf("Error sending msg \"%s\": %s", desc, myString(err))
-		rm.Tracef("Message payload: %#v", cm)
+		nErr, ok := err.(net.Error)
+		if ok && nErr.Temporary() {
+			// Temporary network error.  Let's sleep for 5 seconds and try again.
+			//
+			// FIXME: (adam) As mentioned in Serve(), this is a weak attempt
+			// at fault tolerance.  This struct could stand something more
+			// comprehensive.
+			time.Sleep(5 * time.Second)
+			err = rm.connection.send(&cm)
+			if err == nil {
+				return nil
+			}
+		}
+		rm.Errorf("%q sending: %#v", err, cm)
 	}
+
 	return err
 }
 
@@ -180,10 +196,7 @@ func (rm *remoteMailboxes) Serve() {
 
 		switch msg := message.(type) {
 		case internal.OutgoingMailboxMessage:
-			_ = rm.send(
-				internal.IncomingMailboxMessage(msg),
-				"normal message",
-			)
+			_ = rm.send(internal.IncomingMailboxMessage(msg))
 
 		// all of the gob encoding stuff seems to end up with this getting
 		// an extra layer of pointer indirection added to it.
@@ -193,7 +206,18 @@ func (rm *remoteMailboxes) Serve() {
 				mailboxID:        MailboxID(msg.Target),
 				connectionServer: rm.connectionServer,
 			}
-			_ = addr.Send(msg.Message)
+			err := addr.Send(msg.Message)
+			if err == ErrMailboxTerminated {
+				// Unregister the mailbox again since it appears one or more nodes
+				// did not receive the message either through a network error or
+				// straight up negligence.
+				//
+				// FIXME: (adam) This is a temporary solution until we implement some
+				// sort of retry mechanism when sending out UnregisterName messages
+				// over the socket.  Really, this whole struct could use the ability
+				// to resend any message and be a bit more fault tolerant.
+				rm.connectionServer.registry.UnregisterMailbox(rm.NodeID, addr.GetID())
+			}
 
 		case internal.NotifyRemote:
 			// FIXME: if the local addr dies, this never cleans out
@@ -219,10 +243,7 @@ func (rm *remoteMailboxes) Serve() {
 				// Since this is the first link to this particular
 				// remote mailbox we are recording, we need to send along
 				// the registration message
-				err := rm.send(
-					&internal.NotifyNodeOnTerminate{IntMailboxID: internal.IntMailboxID(remoteID)},
-					"termination notification",
-				)
+				err := rm.send(&internal.NotifyNodeOnTerminate{IntMailboxID: internal.IntMailboxID(remoteID)})
 				if err != nil {
 					addr := Address{
 						mailboxID:        localID,
@@ -248,12 +269,13 @@ func (rm *remoteMailboxes) Serve() {
 			delete(linksToRemote, localID)
 
 			if len(linksToRemote) == 0 {
-				// if that was the last link, we need to unregister from
-				// the remote node
-				// send does all the error handling I need here
+				// If that was the last link, we need to unregister from
+				// the remote node send does all the error handling I need
+				// here.
 				_ = rm.send(
-					&internal.RemoveNotifyNodeOnTerminate{IntMailboxID: internal.IntMailboxID(remoteID)},
-					"remove notify node",
+					&internal.RemoveNotifyNodeOnTerminate{
+						IntMailboxID: internal.IntMailboxID(remoteID),
+					},
 				)
 			}
 
@@ -303,7 +325,6 @@ func (rm *remoteMailboxes) Serve() {
 				&internal.RemoteMailboxTerminated{
 					IntMailboxID: internal.IntMailboxID(id),
 				},
-				"mailbox terminated normally",
 			)
 
 		// This allows us to test proper error handling, despite

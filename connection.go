@@ -145,7 +145,6 @@ func (cs *connectionServer) send(mID MailboxID, msg interface{}) error {
 				Target:  internal.IntMailboxID(mID),
 				Message: msg,
 			},
-			"remote mailbox message",
 		)
 	}
 
