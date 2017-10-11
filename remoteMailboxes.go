@@ -216,6 +216,7 @@ func (rm *remoteMailboxes) Serve() {
 				// sort of retry mechanism when sending out UnregisterName messages
 				// over the socket.  Really, this whole struct could use the ability
 				// to resend any message and be a bit more fault tolerant.
+				rm.Tracef("Received MailboxTerminated error for mailbox ID %x; unregistering", addr.GetID())
 				rm.connectionServer.registry.UnregisterMailbox(rm.NodeID, addr.GetID())
 			}
 
