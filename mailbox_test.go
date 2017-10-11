@@ -300,7 +300,35 @@ func TestMailboxReceive(t *testing.T) {
 	<-done
 }
 
-func TestBasicTerminate(t *testing.T) {
+func TestSimpleMailboxTerminate(t *testing.T) {
+	cs, _ := noClustering(NullLogger)
+	defer cs.Terminate()
+
+	addr, mailbox := connections.NewMailbox()
+
+	// Make certain the mailbox is empty.
+	m, ok := mailbox.ReceiveNextAsync()
+	if ok {
+		t.Fatalf("Received an unexpected message: %#v", m)
+	}
+
+	// Deliver a message to the mailbox.
+	err := addr.Send("Hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The mailbox currently has one message in it.  However, we should
+	// only receive the MailboxTerminated message after we terminate the
+	// mailbox, *not* the "Hello" message.
+	mailbox.Terminate()
+	m, ok = mailbox.ReceiveNextAsync()
+	if _, terminated := m.(MailboxTerminated); !ok || !terminated {
+		t.Fatalf("Expected a MailboxTerminated message: %#v", m)
+	}
+}
+
+func TestTerminate(t *testing.T) {
 	cs, _ := noClustering(NullLogger)
 	defer cs.Terminate()
 
