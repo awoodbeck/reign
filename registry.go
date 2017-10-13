@@ -609,7 +609,7 @@ func (r *registry) registerAll(entries registryEntries) {
 				// never reach its destination and the caller of Register() will never know
 				// about the multiple claim.
 				if err == ErrMailboxTerminated {
-					r.Tracef("Unregistering mailbox %q due to Mailbox Terminated error", mailboxID)
+					r.Tracef("Unregistering mailbox %x due to Mailbox Terminated error", mailboxID)
 					r.Unregister(e.name, addr)
 					continue
 				}
