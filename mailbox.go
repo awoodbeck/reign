@@ -53,6 +53,7 @@ type address interface {
 	notifyAddressOnTerminate(*Address)
 	removeNotifyAddress(*Address)
 	canBeGloballyRegistered() bool
+	canBeGloballyUnregistered() bool
 	getMailboxID() MailboxID
 }
 
@@ -89,6 +90,7 @@ func (a *Address) canBeGloballyRegistered() bool {
 	if a.mailbox == nil {
 		a.getAddress()
 	}
+
 	return a.mailbox.canBeGloballyRegistered()
 }
 
@@ -534,6 +536,10 @@ func (m *Mailbox) canBeGloballyRegistered() bool {
 	return true
 }
 
+func (m *Mailbox) canBeGloballyUnregistered() bool {
+	return true
+}
+
 func (m *Mailbox) getMailboxID() MailboxID {
 	return m.id
 }
@@ -813,6 +819,10 @@ func (nm noMailbox) canBeGloballyRegistered() bool {
 	return false
 }
 
+func (nm noMailbox) canBeGloballyUnregistered() bool {
+	return true
+}
+
 // A boundRemoteAddress is only used for testing in the "multinode"
 // configuration. This allows us to switch into the correct node context
 // when sending messages to the target mailbox, which allows us to ensure
@@ -862,5 +872,9 @@ func (bra boundRemoteAddress) getMailboxID() MailboxID {
 }
 
 func (bra boundRemoteAddress) canBeGloballyRegistered() bool {
+	return false
+}
+
+func (bra boundRemoteAddress) canBeGloballyUnregistered() bool {
 	return false
 }

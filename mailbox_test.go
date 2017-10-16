@@ -25,6 +25,10 @@ func (f FakeMailbox) canBeGloballyRegistered() bool {
 	return false
 }
 
+func (f FakeMailbox) canBeGloballyUnregistered() bool {
+	return false
+}
+
 func (f FakeMailbox) notifyAddressOnTerminate(_ *Address) {}
 
 func (f FakeMailbox) removeNotifyAddress(_ *Address) {}
