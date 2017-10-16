@@ -94,6 +94,15 @@ func (a *Address) canBeGloballyRegistered() bool {
 	return a.mailbox.canBeGloballyRegistered()
 }
 
+func (a *Address) canBeGloballyUnregistered() bool {
+	// If no mailbox is cached, resolve it now
+	if a.mailbox == nil {
+		a.getAddress()
+	}
+
+	return a.mailbox.canBeGloballyUnregistered()
+}
+
 func (a *Address) getAddress() address {
 	// We've already got a cached Mailbox; use it
 	if a.mailbox != nil {

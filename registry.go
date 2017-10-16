@@ -535,7 +535,7 @@ func (r *registry) Register(name string, addr *Address) error {
 // name. If you wish to supercede a claim with a new address, you can
 // simply register the new claim, and it will overwrite the previous one.
 func (r *registry) Unregister(name string, addr *Address) {
-	if !addr.canBeGloballyRegistered() {
+	if !addr.canBeGloballyUnregistered() {
 		return
 	}
 
