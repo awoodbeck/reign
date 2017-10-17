@@ -179,14 +179,16 @@ func (ic *incomingConnection) send(value *internal.ClusterMessage) error {
 }
 
 func (ic *incomingConnection) terminate() {
-	tls := ic.tls
-	if tls != nil {
-		_ = tls.Close()
+	if ic == nil {
+		return
 	}
 
-	tcpConn := ic.tcpConn
-	if tcpConn != nil {
-		_ = tcpConn.Close()
+	if ic.tls != nil {
+		_ = ic.tls.Close()
+	}
+
+	if ic.tcpConn != nil {
+		_ = ic.tcpConn.Close()
 	}
 }
 
@@ -236,10 +238,6 @@ func (ic *incomingConnection) handleConnection() {
 	}
 	ic.Infof("Node %d listener successfully cluster handshook", ic.server.ID)
 
-	ic.remoteMailboxes = ic.mailboxesForNode(ic.client.ID)
-	ic.remoteMailboxes.setConnection(ic)
-	defer ic.remoteMailboxes.unsetConnection(ic)
-
 	// Synchronize registry with the remote node.
 	err = ic.registrySync()
 	if err != nil {
@@ -248,6 +246,10 @@ func (ic *incomingConnection) handleConnection() {
 		return
 	}
 	ic.Infof("Node %d listener successfully synced registry", ic.server.ID)
+
+	ic.remoteMailboxes = ic.mailboxesForNode(ic.client.ID)
+	ic.remoteMailboxes.setConnection(ic)
+	defer ic.remoteMailboxes.unsetConnection(ic)
 
 	ic.handleIncomingMessages()
 }
@@ -262,6 +264,7 @@ func (ic *incomingConnection) sslHandshake() error {
 		return errors.New("ssl handshake simulating failure")
 	}
 	tlsConfig := ic.nodeListener.connectionServer.Cluster.tlsConfig(ic.server.ID)
+
 	tls := tls.Server(ic.conn, tlsConfig)
 	ic.Tracef("Node %d listener made the tlsConn, handshaking", ic.server.ID)
 
@@ -271,9 +274,8 @@ func (ic *incomingConnection) sslHandshake() error {
 	}
 
 	ic.tls = tls
-	ic.conn = tls
-	ic.output = gob.NewEncoder(ic.conn)
-	ic.input = gob.NewDecoder(ic.conn)
+	ic.output = gob.NewEncoder(ic.tls)
+	ic.input = gob.NewDecoder(ic.tls)
 
 	return nil
 }
@@ -328,10 +330,9 @@ func (ic *incomingConnection) clusterHandshake() error {
 // registrySync sends this node's registry MailboxID and claims to the remote node.
 func (ic *incomingConnection) registrySync() error {
 	// Send our registry synchronization data to the remote node.
-	rs := internal.RegistrySync{
+	rs := internal.RegisterRemoteNode{
 		Node:      internal.IntNodeID(ic.node.ID),
 		MailboxID: internal.IntMailboxID(ic.connectionServer.registry.Address.GetID()),
-		Claims:    ic.connectionServer.registry.generateAllNodeClaims(),
 	}
 	err := ic.output.Encode(rs)
 	if err != nil {
@@ -339,7 +340,7 @@ func (ic *incomingConnection) registrySync() error {
 	}
 
 	// Receive the remote node's registry synchronization data.
-	var irs internal.RegistrySync
+	var irs internal.RegisterRemoteNode
 	err = ic.input.Decode(&irs)
 	if err != nil {
 		return err
@@ -347,7 +348,9 @@ func (ic *incomingConnection) registrySync() error {
 
 	ic.Tracef("Received mailbox ID %x from node %d", irs.MailboxID, irs.Node)
 
-	// Add remote node's registry mailbox ID to the nodeRegistries map.
+	// Add remote node's registry mailbox ID to the nodeRegistries map.  We need
+	// to register this *before* we generate and send our registry claims else
+	// some registry changes won't sync.
 	ic.connectionServer.registry.addNodeRegistry(
 		NodeID(irs.Node),
 		Address{
@@ -355,9 +358,6 @@ func (ic *incomingConnection) registrySync() error {
 			connectionServer: ic.connectionServer,
 		},
 	)
-
-	// Process the remote node's registry claims.
-	ic.connectionServer.registry.handleAllNodeClaims(irs.Claims)
 
 	return nil
 }
@@ -386,6 +386,13 @@ func (ic *incomingConnection) handleIncomingMessages() {
 
 	ic.resetConnectionDeadline(DeadlineInterval)
 
+	// Send our registry claims.
+	var claims internal.ClusterMessage = ic.connectionServer.registry.generateAllNodeClaims()
+	err = ic.output.Encode(&claims)
+	if err != nil {
+		ic.Errorf("Sending registry claims: %s", err)
+	}
+
 	for err == nil {
 		err = ic.input.Decode(&cm)
 		switch err {
@@ -393,7 +400,10 @@ func (ic *incomingConnection) handleIncomingMessages() {
 			// We received a message.  No need to PING the remote node.
 			ic.resetPingTimer <- DefaultPingInterval
 
-			switch cm.(type) {
+			switch msg := cm.(type) {
+			case *internal.AllNodeClaims:
+				ic.Tracef("Received claims from node %d", msg.Node)
+				_ = ic.connectionServer.registry.Send(msg)
 			case *internal.Ping:
 				err = ic.output.Encode(&pong)
 				if err != nil {

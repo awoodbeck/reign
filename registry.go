@@ -312,8 +312,11 @@ func (r *registry) Serve() {
 			// HERE: Handling this and the errors in mailbox.go
 			r.handleConnectionStatus(msg)
 
-		case internal.AllNodeClaims:
+		case *internal.AllNodeClaims:
 			r.handleAllNodeClaims(msg)
+
+		case internal.AllNodeClaims:
+			r.handleAllNodeClaims(&msg)
 
 		case synchronizeRegistry:
 			msg.ch <- void
@@ -342,7 +345,7 @@ func (r *registry) Sync() {
 
 // generateAllNodeClaims returns a populated AllNodeClaims object suitable
 // for synchronizing mailbox claims with a remote node.
-func (r *registry) generateAllNodeClaims() internal.AllNodeClaims {
+func (r *registry) generateAllNodeClaims() *internal.AllNodeClaims {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -369,10 +372,10 @@ func (r *registry) generateAllNodeClaims() internal.AllNodeClaims {
 
 	r.Tracef("Sending the following claims: %#v", anc)
 
-	return anc
+	return &anc
 }
 
-func (r *registry) handleAllNodeClaims(msg internal.AllNodeClaims) {
+func (r *registry) handleAllNodeClaims(msg *internal.AllNodeClaims) {
 	for name, mailboxIDs := range msg.Claims {
 		for intMailboxID := range mailboxIDs {
 			// Sanity check.

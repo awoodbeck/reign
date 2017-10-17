@@ -243,7 +243,7 @@ func TestInternalAllNodeClaims(t *testing.T) {
 	cs, r := noClustering(NullLogger)
 	defer cs.Terminate()
 
-	go func() { r.Serve() }()
+	go r.Serve()
 	defer r.Stop()
 
 	// Make a bunch of names for the same mailbox and register them with AllNodeClaims
@@ -252,14 +252,14 @@ func TestInternalAllNodeClaims(t *testing.T) {
 	addr1, mbx1 := cs.NewMailbox()
 	defer mbx1.Terminate()
 
-	mid := internal.IntMailboxID(mbx1.id)
+	mID := internal.IntMailboxID(mbx1.id)
 	registrationMap := make(map[string]map[internal.IntMailboxID]struct{})
 	for _, name := range names {
 		registrationMap[name] = map[internal.IntMailboxID]struct{}{
-			mid: struct{}{},
+			mID: struct{}{},
 		}
 	}
-	anc := internal.AllNodeClaims{
+	anc := &internal.AllNodeClaims{
 		Node:   internal.IntNodeID(cs.nodeID),
 		Claims: registrationMap,
 	}

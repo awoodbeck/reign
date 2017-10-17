@@ -37,7 +37,7 @@ func init() {
 // This function grabs the test bed and runs basic tests on it to
 // establish that it is fundamentally working.
 func TestMinimalTestBed(t *testing.T) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, testLogger{t})
 	defer ntb.terminate()
 
 	if ntb.node1address1.mailboxID == ntb.node2address1.mailboxID {
@@ -98,7 +98,7 @@ func TestMinimalTestBed(t *testing.T) {
 }
 
 func TestMessagesCanSendMailboxes(t *testing.T) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, testLogger{t})
 	defer ntb.terminate()
 
 	// Here we send address1_2 a reference to address1_1, from the POV
@@ -133,7 +133,7 @@ func TestMessagesCanSendMailboxes(t *testing.T) {
 
 // Little tests which just get some coverage out of the way.
 func TestCoverage(t *testing.T) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, testLogger{t})
 
 	if !panics(func() { newConnections(nil, NodeID(1)) }) {
 		t.Fatal("Didn't panic with bad newConnections: no cluster")
@@ -168,7 +168,7 @@ func TestCoverage(t *testing.T) {
 //   message goes across, the link to the node terminates.
 
 func TestHappyPathRemoteLink(t *testing.T) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, testLogger{t})
 	defer ntb.terminate()
 
 	// from the perspective of node 1, "Mr. Mailbox 1_2 on node 2,
@@ -198,7 +198,7 @@ func TestHappyPathRemoteLink(t *testing.T) {
 // This tests what happens if we have two notifications, and then
 // unnotify one of them. We still want to receive the termination notice.
 func TestHappyPathPartialUnnotify(t *testing.T) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, testLogger{t})
 	defer ntb.terminate()
 
 	// this is used to determine when the remote mailboxes have
@@ -240,7 +240,7 @@ func TestHappyPathPartialUnnotify(t *testing.T) {
 // This is like the previous test, except that we add two notifications
 // and remove both of them.
 func TestHappyPathFullUnnotify(t *testing.T) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, testLogger{t})
 	defer ntb.terminate()
 
 	ntb.fromNode2toNode1mailbox2.NotifyAddressOnTerminate(ntb.node1address1)
@@ -267,7 +267,7 @@ func TestHappyPathFullUnnotify(t *testing.T) {
 }
 
 func TestRemoteLinkErrorPaths(t *testing.T) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, testLogger{t})
 	defer ntb.terminate()
 
 	setConnections(ntb.node1connectionServer)
@@ -285,7 +285,12 @@ func TestRemoteLinkErrorPaths(t *testing.T) {
 }
 
 func TestConnectionPanicsClient(t *testing.T) {
-	ntb := testbed(nil)
+	// defaultPingInterval := DefaultPingInterval
+	// DefaultPingInterval = time.Hour
+	// defer func() {
+	// 	DefaultPingInterval = defaultPingInterval
+	// }()
+	ntb := testbed(nil, testLogger{t})
 	defer ntb.terminate()
 
 	c := make(chan struct{})
@@ -303,7 +308,7 @@ func TestConnectionPanicsClient(t *testing.T) {
 }
 
 func TestConnectionPanicsServer(t *testing.T) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, testLogger{t})
 	defer ntb.terminate()
 
 	c := make(chan struct{})
@@ -324,7 +329,7 @@ func TestConnectionPanicsServer(t *testing.T) {
 }
 
 func TestConnectionDiesClient(t *testing.T) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, testLogger{t})
 	defer ntb.terminate()
 
 	c := make(chan struct{})
@@ -341,7 +346,7 @@ func TestConnectionDiesClient(t *testing.T) {
 }
 
 func TestConnectionDiesServer(t *testing.T) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, testLogger{t})
 	defer ntb.terminate()
 
 	c := make(chan struct{})
@@ -361,7 +366,7 @@ func TestConnectionDiesServer(t *testing.T) {
 }
 
 func TestHeartbeatRoundtrip(t *testing.T) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, testLogger{t})
 	defer ntb.terminate()
 
 	// Set the peekFunc() on c1's node connection to c2 object.
@@ -372,9 +377,10 @@ func TestHeartbeatRoundtrip(t *testing.T) {
 
 	// Take a peek at the first two messages. The only messages sent between nodes of
 	// this ntb should be alternating PING and PONG messages.  Make sure we get one
-	// of each.
-	for i := 0; i < 2; i++ {
+	// of each.  There may be an AllNodeClaims message in there as well.
+	for i := 0; i < 3; i++ {
 		switch cm := <-c; cm.(type) {
+		case *internal.AllNodeClaims:
 		case *internal.Ping:
 			recPing = true
 		case *internal.Pong:

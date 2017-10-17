@@ -36,7 +36,7 @@ func TestMyStringCover(t *testing.T) {
 }
 
 func TestNodeListenerErrors(t *testing.T) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, testLogger{t})
 	defer ntb.terminate()
 
 	nl := &nodeListener{
@@ -90,7 +90,7 @@ func TestNodeListenerErrors(t *testing.T) {
 }
 
 func TestListenerSSLHandshakeFailures(t *testing.T) {
-	ntb := unstartedTestbed(nil)
+	ntb := unstartedTestbed(nil, testLogger{t})
 	// we never start the servers, so we only need this
 	defer ntb.terminateMailboxes()
 
@@ -99,7 +99,7 @@ func TestListenerSSLHandshakeFailures(t *testing.T) {
 }
 
 func TestListenerClusterHandshakeFailures(t *testing.T) {
-	ntb := unstartedTestbed(nil)
+	ntb := unstartedTestbed(nil, testLogger{t})
 	defer ntb.terminateMailboxes()
 
 	ntb.node2connectionServer.listener.failOnClusterHandshake = true
@@ -107,7 +107,7 @@ func TestListenerClusterHandshakeFailures(t *testing.T) {
 }
 
 func TestNodeSSLHandshakeFailures(t *testing.T) {
-	ntb := unstartedTestbed(nil)
+	ntb := unstartedTestbed(nil, testLogger{t})
 	defer ntb.terminateMailboxes()
 
 	ntb.node1connectionServer.nodeConnectors[2].failOnSSLHandshake = true
@@ -115,7 +115,7 @@ func TestNodeSSLHandshakeFailures(t *testing.T) {
 }
 
 func TestNodeClusterHandshakeFailure(t *testing.T) {
-	ntb := unstartedTestbed(nil)
+	ntb := unstartedTestbed(nil, testLogger{t})
 	defer ntb.terminateMailboxes()
 
 	ntb.node1connectionServer.nodeConnectors[2].failOnClusterHandshake = true
@@ -159,7 +159,7 @@ func TestCoverStopNodeListener(t *testing.T) {
 }
 
 func BenchmarkMinimalMessageSend(b *testing.B) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, nil)
 	defer ntb.terminate()
 
 	b.ReportAllocs()
@@ -175,7 +175,7 @@ func BenchmarkMinimalMessageSend(b *testing.B) {
 }
 
 func BenchmarkRegisterUnregisterMailbox(b *testing.B) {
-	ntb := testbed(nil)
+	ntb := testbed(nil, nil)
 	defer ntb.terminate()
 
 	b.ReportAllocs()
