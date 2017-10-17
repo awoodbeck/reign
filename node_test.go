@@ -285,11 +285,6 @@ func TestRemoteLinkErrorPaths(t *testing.T) {
 }
 
 func TestConnectionPanicsClient(t *testing.T) {
-	// defaultPingInterval := DefaultPingInterval
-	// DefaultPingInterval = time.Hour
-	// defer func() {
-	// 	DefaultPingInterval = defaultPingInterval
-	// }()
 	ntb := testbed(nil, testLogger{t})
 	defer ntb.terminate()
 
