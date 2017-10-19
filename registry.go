@@ -318,9 +318,6 @@ func (r *registry) Serve() {
 		case internal.AllNodeClaims:
 			r.handleAllNodeClaims(&msg)
 
-		case registryEntries:
-			r.registerAll(msg)
-
 		case synchronizeRegistry:
 			msg.ch <- void
 
@@ -400,7 +397,7 @@ func (r *registry) handleAllNodeClaims(msg *internal.AllNodeClaims) {
 		}
 	}
 
-	_ = r.Send(re)
+	r.registerAll(re)
 }
 
 // handleConnectionStatus deals with the connection to a node going up or
