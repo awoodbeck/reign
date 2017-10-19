@@ -318,6 +318,9 @@ func (r *registry) Serve() {
 		case internal.AllNodeClaims:
 			r.handleAllNodeClaims(&msg)
 
+		case registryEntries:
+			r.registerAll(msg)
+
 		case synchronizeRegistry:
 			msg.ch <- void
 
@@ -376,6 +379,8 @@ func (r *registry) generateAllNodeClaims() *internal.AllNodeClaims {
 }
 
 func (r *registry) handleAllNodeClaims(msg *internal.AllNodeClaims) {
+	re := registryEntries{}
+
 	for name, mailboxIDs := range msg.Claims {
 		for intMailboxID := range mailboxIDs {
 			// Sanity check.
@@ -385,18 +390,17 @@ func (r *registry) handleAllNodeClaims(msg *internal.AllNodeClaims) {
 				continue
 			}
 
-			// These entries must be sent to the registry's mailbox. The
-			// registry's mailbox is a timeline of registrations and
-			// unregistrations.  Calling register() here would cause
-			// synchronization issues with the unprocessed messages in
-			// the registry's mailbox.
-			_ = r.Send(internal.RegisterName{
-				Node:      internal.IntNodeID(r.thisNode),
-				Name:      name,
-				MailboxID: intMailboxID,
-			})
+			re = append(
+				re,
+				registryEntry{
+					name:      name,
+					mailboxID: MailboxID(intMailboxID),
+				},
+			)
 		}
 	}
+
+	_ = r.Send(re)
 }
 
 // handleConnectionStatus deals with the connection to a node going up or
