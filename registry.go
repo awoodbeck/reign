@@ -456,7 +456,7 @@ func (r *registry) GetDebugger() NamesDebugger {
 // Lookup returns an Address that can be used to send messages to a mailbox
 // registered with the given string.
 func (r *registry) Lookup(s string) (a *Address) {
-	defer r.Tracef("Lookup for %q returned Address %q", s, a)
+	defer func() { r.Tracef("Lookup for %q returned Address %q", s, a) }()
 
 	addresses := r.LookupAll(s)
 
